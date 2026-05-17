@@ -1,0 +1,18 @@
+@theme {
+  --color-lingua-purple: #6C4EF5;
+  --color-lingua-deep-purple: #5B3BF6;
+  --color-lingua-blue: #4D8BFF;
+  --color-lingua-green: #21C16B;
+  
+  --color-success: #21C16B;
+  --color-warning: #FFC800;
+  --color-streak: #FF8A00;
+  --color-error: #FF4D4F;
+  --color-info: #4D8BFF;
+
+  --color-text-primary: #0D132B;
+  --color-text-secondary: #6B7280;
+  --color-border: #E5E7EB;
+  --color-surface: #F6F7FB;
+  --color-background: #FFFFFF;
+}
