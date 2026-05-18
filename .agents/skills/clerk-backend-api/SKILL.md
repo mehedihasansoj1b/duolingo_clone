@@ -16,9 +16,9 @@ Before ANY POST / PATCH / PUT / DELETE, you MUST do ALL of the following in your
 
 1. **Check CLERK_SECRET_KEY** — verify it is set:
    ```bash
-   echo $CLERK_SECRET_KEY | head -c 10
+   [[ -n "${CLERK_SECRET_KEY:-}" ]]
    ```
-   If empty, stop and ask the user. Do not proceed without a valid key.
+   If this check fails, stop and ask the user to provide `CLERK_SECRET_KEY`. Do not print, truncate, or otherwise output any portion of the secret. Do not proceed without a valid key.
 
 2. **Check CLERK_BAPI_SCOPES** — run:
    ```bash

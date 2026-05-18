@@ -1,6 +1,7 @@
 import { images } from "@/constants/images";
 import { useSignIn, useSignUp, useSSO } from "@clerk/expo";
 import { FontAwesome } from "@expo/vector-icons";
+import * as AuthSession from "expo-auth-session";
 import { Image } from "expo-image";
 import { Link, router, Stack } from "expo-router";
 import { styled } from "nativewind";
@@ -29,7 +30,7 @@ type AuthScreenProps = {
 };
 
 const isIos = process.env.EXPO_OS === "ios";
-const redirectUrl = "duolingo://oauth-callback";
+const redirectUrl = AuthSession.makeRedirectUri({ path: "oauth-callback" });
 
 function isUnsupportedPasswordError(error: unknown) {
   if (

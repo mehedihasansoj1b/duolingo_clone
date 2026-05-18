@@ -11,15 +11,37 @@
 
 set -euo pipefail
 
+load_env_file() {
+  local _envfile="$1"
+  local _line _key _value
+
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    _line="${_line%$'\r'}"
+    [[ "$_line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$_line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ "$_line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      _key="${BASH_REMATCH[1]}"
+      _value="${BASH_REMATCH[2]}"
+
+      if [[ "$_value" =~ ^\"(.*)\"[[:space:]]*$ ]]; then
+        _value="${BASH_REMATCH[1]}"
+      elif [[ "$_value" =~ ^\'(.*)\'[[:space:]]*$ ]]; then
+        _value="${BASH_REMATCH[1]}"
+      fi
+
+      export "$_key=$_value"
+    fi
+  done < "$_envfile"
+}
+
 # Walk up from $PWD to find .env/.env.local (mirrors Clerk CLI behavior).
 # Stops at the first directory that provides CLERK_SECRET_KEY.
 _dir="$PWD"
 while true; do
   for _envfile in "$_dir/.env" "$_dir/.env.local"; do
     if [[ -f "$_envfile" ]]; then
-      set -a
-      source "$_envfile"
-      set +a
+      load_env_file "$_envfile"
     fi
   done
   [[ -n "${CLERK_SECRET_KEY:-}" ]] && break
