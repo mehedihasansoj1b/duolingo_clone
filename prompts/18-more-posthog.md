@@ -16,11 +16,11 @@ Three custom events, captured at these moments:
 2. lesson_started — fires when the lesson screen mounts and the user begins the lesson.
    Properties: { lesson_id: string, language: string, lesson_number: number }
 
-4. lesson_abandoned — fires when the user exits a lesson before lesson_completed fires (back navigation, screen unmount before completion).
+3. lesson_abandoned — fires when the user exits a lesson before lesson_completed fires (back navigation, screen unmount before completion).
    Properties: { lesson_id: string, time_into_lesson_seconds: number, last_question_index: number }
 
 
 Implementation rules:
-- Track lesson start time with a ref captured on mount so duration_seconds is accurate.
+- Track lesson start time with a ref captured on mount so time_into_lesson_seconds is accurate.
 - Do not modify any UI.
 - Do not expose any keys; PostHog is already configured via environment variables.

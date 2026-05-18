@@ -1,5 +1,7 @@
+import { useAuth } from "@clerk/expo";
+import { images } from "@/constants/images";
 import { Image } from "expo-image";
-import { Stack } from "expo-router";
+import { Redirect, Stack, router } from "expo-router";
 import { styled } from "nativewind";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,6 +9,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const StyledImage = styled(Image);
 
 export default function OnboardingScreen() {
+  const { isLoaded, isSignedIn } = useAuth();
+
+  if (!isLoaded) {
+    return null;
+  }
+
+  if (isSignedIn) {
+    return <Redirect href="/" />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -15,11 +27,11 @@ export default function OnboardingScreen() {
         {/* Header */}
         <View className="flex-row items-center justify-center gap-2 mt-4">
           <StyledImage
-            source={require("../assets/images/moscot-logo.png")}
+            source={images.mascotLogo}
             className="size-10"
             contentFit="contain"
           />
-          <Text className="h2 text-text-primary mt-1">lingua</Text>
+          <Text className="h2 text-text-primary mt-1">muolingo</Text>
         </View>
 
         {/* Center Content */}
@@ -31,7 +43,7 @@ export default function OnboardingScreen() {
         <View className="flex-1 items-center justify-center mt-8">
           <View className="relative w-[280px] h-[280px] items-center justify-center">
             <StyledImage
-              source={require("../assets/images/mascot-welcome.png")}
+              source={images.mascotWelcome}
               className="size-[220px] z-10"
               contentFit="contain"
             />
@@ -55,7 +67,11 @@ export default function OnboardingScreen() {
 
         {/* Footer Buttons */}
         <View className="gap-4 w-full mt-auto">
-          <Pressable className="bg-success rounded-2xl py-4 items-center justify-center shadow-[0_4px_0_#16A34A]">
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/sign-up")}
+            className="bg-success rounded-2xl py-4 items-center justify-center shadow-[0_4px_0_#16A34A]"
+          >
             <Text className="h4 text-background uppercase">Get Started</Text>
           </Pressable>
         </View>
