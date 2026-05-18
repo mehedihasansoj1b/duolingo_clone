@@ -1,10 +1,12 @@
 import { images } from "@/constants/images";
+import { useSignIn, useSignUp, useSSO } from "@clerk/expo";
 import { FontAwesome } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Link, Stack, router } from "expo-router";
+import { Link, router, Stack } from "expo-router";
 import { styled } from "nativewind";
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -19,17 +21,223 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const StyledImage = styled(Image);
 
 type AuthMode = "sign-up" | "sign-in";
+type SocialProvider = "Google" | "Apple";
+type OAuthStrategy = "oauth_google" | "oauth_apple";
 
 type AuthScreenProps = {
   mode: AuthMode;
 };
 
 const isIos = process.env.EXPO_OS === "ios";
+const redirectUrl = "duolingo://oauth-callback";
+
+function isUnsupportedPasswordError(error: unknown) {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("message" in error) ||
+    typeof error.message !== "string"
+  ) {
+    return false;
+  }
+
+  return error.message.includes("password is not a valid parameter");
+}
 
 export function AuthScreen({ mode }: AuthScreenProps) {
+  const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
+  const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const [isVerificationVisible, setVerificationVisible] = useState(false);
   const [isPasswordVisible, setPasswordVisible] = useState(false);
+  const [emailAddress, setEmailAddress] = useState("");
+  const [password, setPassword] = useState("");
   const isSignUp = mode === "sign-up";
+  const isFetching =
+    signInFetchStatus === "fetching" || signUpFetchStatus === "fetching";
+
+  const handleSessionTask = (currentTask: any, authMode: AuthMode) => {
+    if (!currentTask) {
+      router.replace("/");
+      return;
+    }
+
+    // Handle task-specific flows
+    switch (currentTask) {
+      case "require_email_verification":
+      case "require_phone_verification":
+        // Trigger verification modal for email or phone codes
+        setVerificationVisible(true);
+        break;
+      case "require_mfa":
+      case "continue_sign_up":
+        // MFA or additional setup needed
+        Alert.alert(
+          "Additional verification required",
+          `Please complete the ${currentTask} step to continue your registration.`,
+        );
+        setVerificationVisible(true);
+        break;
+      default:
+        console.log(`${authMode} session task:`, currentTask);
+        Alert.alert(
+          "Authentication step required",
+          "Please complete the required steps to continue.",
+        );
+    }
+  };
+
+  const finishAuth = async (
+    resource: typeof signIn | typeof signUp,
+    authMode: AuthMode,
+  ) => {
+    await resource.finalize({
+      navigate: ({ session }) => {
+        handleSessionTask(session?.currentTask ?? null, authMode);
+      },
+    });
+  };
+
+  const showError = (error: unknown) => {
+    const message =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof error.message === "string"
+        ? error.message
+        : "Something went wrong. Please try again.";
+
+    Alert.alert("Authentication error", message);
+  };
+
+  const handleEmailAuth = async () => {
+    const normalizedEmail = emailAddress.trim();
+
+    if (!normalizedEmail) {
+      Alert.alert("Email required", "Enter your email address to continue.");
+      return;
+    }
+
+    if (isSignUp && !password) {
+      Alert.alert(
+        "Password required",
+        "Enter a password to create your account.",
+      );
+      return;
+    }
+
+    try {
+      if (isSignUp) {
+        const { error } = await signUp.password({
+          emailAddress: normalizedEmail,
+          password,
+        });
+
+        if (error) {
+          if (!isUnsupportedPasswordError(error)) {
+            showError(error);
+            return;
+          }
+
+          await signUp.reset();
+
+          const { error: emailCodeError } = await signUp.create({
+            emailAddress: normalizedEmail,
+          });
+
+          if (emailCodeError) {
+            showError(emailCodeError);
+            return;
+          }
+        }
+
+        await signUp.verifications.sendEmailCode();
+      } else {
+        const { error } = await signIn.create({
+          identifier: normalizedEmail,
+        });
+
+        if (error) {
+          showError(error);
+          return;
+        }
+
+        await signIn.emailCode.sendCode({
+          emailAddress: normalizedEmail,
+        });
+      }
+
+      setVerificationVisible(true);
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const handleVerifyCode = async (code: string) => {
+    try {
+      if (isSignUp) {
+        const { error } = await signUp.verifications.verifyEmailCode({ code });
+
+        if (error) {
+          showError(error);
+          return false;
+        }
+
+        if (signUp.status === "complete") {
+          await finishAuth(signUp, "sign-up");
+          return true;
+        }
+
+        // If not complete, show verification incomplete message
+        Alert.alert(
+          "Verification incomplete",
+          "We could not finish authentication with that code. Please try again.",
+        );
+        return false;
+      } else {
+        const { error } = await signIn.emailCode.verifyCode({ code });
+
+        if (error) {
+          showError(error);
+          return false;
+        }
+
+        if (signIn.status === "complete") {
+          await finishAuth(signIn, "sign-in");
+          return true;
+        }
+
+        // If not complete, show verification incomplete message
+        Alert.alert(
+          "Verification incomplete",
+          "We could not finish authentication with that code. Please try again.",
+        );
+        return false;
+      }
+    } catch (error) {
+      showError(error);
+      return false;
+    }
+  };
+
+  const handleSocialAuth = async (provider: SocialProvider) => {
+    const strategy: OAuthStrategy =
+      provider === "Google" ? "oauth_google" : "oauth_apple";
+
+    try {
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy,
+        redirectUrl,
+      });
+
+      if (createdSessionId) {
+        await setActive?.({ session: createdSessionId });
+        router.replace("/");
+      }
+    } catch (error) {
+      showError(error);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -97,9 +305,11 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               autoCorrect={false}
               inputMode="email"
               keyboardType="email-address"
+              onChangeText={setEmailAddress}
               placeholder="alex@gmail.com"
               placeholderTextColor="#727c9a"
               style={styles.input}
+              value={emailAddress}
             />
           </View>
 
@@ -108,10 +318,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               <Text style={styles.inputLabel}>Password</Text>
               <View className="flex-row items-center">
                 <TextInput
+                  onChangeText={setPassword}
                   secureTextEntry={!isPasswordVisible}
                   placeholder="•••••••••"
                   placeholderTextColor="#727c9a"
                   style={[styles.input, styles.passwordInput]}
+                  value={password}
                 />
                 <Pressable
                   accessibilityRole="button"
@@ -132,8 +344,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
           <Pressable
             accessibilityRole="button"
-            onPress={() => setVerificationVisible(true)}
-            style={styles.shadowButton}
+            disabled={isFetching}
+            onPress={handleEmailAuth}
+            style={[styles.shadowButton, isFetching && styles.disabledButton]}
             className="h-[66px] items-center justify-center rounded-[15px] bg-lingua-purple"
           >
             <Text className="font-poppins-semibold text-[23px] leading-[30px] text-white">
@@ -151,8 +364,20 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         </View>
 
         <View className="gap-4">
-          <SocialButton provider="Google" iconName="google" color="#4285f4" />
-          <SocialButton provider="Apple" iconName="apple" color="#001328" />
+          <SocialButton
+            provider="Google"
+            iconName="google"
+            color="#4285f4"
+            disabled={isFetching}
+            onPress={() => handleSocialAuth("Google")}
+          />
+          <SocialButton
+            provider="Apple"
+            iconName="apple"
+            color="#001328"
+            disabled={isFetching}
+            onPress={() => handleSocialAuth("Apple")}
+          />
         </View>
 
         <View className="mt-auto flex-row items-center justify-center gap-1 pt-16">
@@ -171,7 +396,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       <VerificationModal
         visible={isVerificationVisible}
         onClose={() => setVerificationVisible(false)}
+        onVerify={handleVerifyCode}
       />
+      <View nativeID="clerk-captcha" />
     </SafeAreaView>
   );
 }
@@ -180,20 +407,31 @@ function SocialButton({
   provider,
   iconName,
   color,
+  disabled,
+  onPress,
 }: {
   provider: "Google" | "Apple";
   iconName: keyof typeof FontAwesome.glyphMap;
   color: string;
+  disabled: boolean;
+  onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      className="h-[76px] flex-row items-center justify-center gap-5 rounded-[18px] border border-border bg-white px-6"
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.socialButton, disabled && styles.disabledButton]}
     >
-      <View className="h-8 w-8 items-center justify-center">
+      <View style={styles.socialIcon}>
         <FontAwesome name={iconName} size={30} color={color} />
       </View>
-      <Text className="font-poppins-medium text-[19px] leading-[27px] text-text-primary">
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+        numberOfLines={1}
+        style={styles.socialText}
+      >
         Continue with {provider}
       </Text>
     </Pressable>
@@ -203,11 +441,14 @@ function SocialButton({
 function VerificationModal({
   visible,
   onClose,
+  onVerify,
 }: {
   visible: boolean;
   onClose: () => void;
+  onVerify: (code: string) => Promise<boolean>;
 }) {
   const [code, setCode] = useState("");
+  const [isVerifying, setVerifying] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -221,15 +462,22 @@ function VerificationModal({
     onClose();
   };
 
-  const handleChangeCode = (value: string) => {
+  const handleChangeCode = async (value: string) => {
     const nextCode = value.replace(/\D/g, "").slice(0, 6);
     setCode(nextCode);
 
     if (nextCode.length === 6) {
-      requestAnimationFrame(() => {
-        handleClose();
-        router.replace("/");
-      });
+      setVerifying(true);
+
+      try {
+        const didVerify = await onVerify(nextCode);
+
+        if (didVerify) {
+          handleClose();
+        }
+      } finally {
+        setVerifying(false);
+      }
     }
   };
 
@@ -269,6 +517,7 @@ function VerificationModal({
             ref={inputRef}
             value={code}
             onChangeText={handleChangeCode}
+            editable={!isVerifying}
             keyboardType="number-pad"
             inputMode="numeric"
             maxLength={6}
@@ -319,6 +568,32 @@ const styles = StyleSheet.create({
   passwordInput: {
     flex: 1,
   },
+  socialButton: {
+    height: 62,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: "#e8eaf1",
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    paddingHorizontal: 20,
+  },
+  socialIcon: {
+    width: 34,
+    height: 34,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  socialText: {
+    flexShrink: 1,
+    fontFamily: "Poppins-Medium",
+    fontSize: 20,
+    lineHeight: 28,
+    color: "#001328",
+  },
   modalKeyboardView: {
     flex: 1,
     justifyContent: "flex-end",
@@ -364,5 +639,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 4,
     elevation: 8,
+  },
+  disabledButton: {
+    opacity: 0.55,
   },
 });
