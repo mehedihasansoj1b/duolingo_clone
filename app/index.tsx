@@ -19,6 +19,9 @@ export default function Index() {
       <Link href="/onboarding" className="text-lingua-green h4">
         Open Onboarding Screen
       </Link>
+      <Link href="/language-selection" className="text-lingua-purple h4">
+        Open Language Selection Screen
+      </Link>
       <Pressable
         accessibilityRole="button"
         onPress={() => signOut()}
