@@ -1,11 +1,13 @@
 import { images } from "@/constants/images";
 import { languages } from "@/data/languages";
+import { useLanguageStore } from "@/store/language-store";
 import type { LanguageCode } from "@/types/learning";
+import { useAuth } from "@clerk/expo";
 import { FontAwesome } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router, Stack } from "expo-router";
+import { Redirect, router, Stack } from "expo-router";
 import { styled } from "nativewind";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -26,11 +28,20 @@ const learnerCounts: Record<LanguageCode, string> = {
 };
 
 export default function LanguageSelectionScreen() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { hasHydrated, selectedLanguageId: savedLanguageId, setSelectedLanguage } =
+    useLanguageStore();
   const { height } = useWindowDimensions();
   const earthHeight = Math.max(150, Math.min(220, height * 0.22));
   const [selectedLanguageId, setSelectedLanguageId] =
-    useState<LanguageCode>("es");
+    useState<LanguageCode>(savedLanguageId ?? "es");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (savedLanguageId) {
+      setSelectedLanguageId(savedLanguageId);
+    }
+  }, [savedLanguageId]);
 
   const filteredLanguages = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -46,6 +57,14 @@ export default function LanguageSelectionScreen() {
       return searchableText.includes(normalizedQuery);
     });
   }, [searchQuery]);
+
+  if (!isLoaded || !hasHydrated) {
+    return null;
+  }
+
+  if (!isSignedIn) {
+    return <Redirect href="/onboarding" />;
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -93,59 +112,80 @@ export default function LanguageSelectionScreen() {
             </Text>
 
             <View className="gap-0">
-              {filteredLanguages.map((language) => {
-                const isSelected = language.id === selectedLanguageId;
+              {filteredLanguages.length === 0 ? (
+                <View
+                  accessibilityRole="button"
+                  className="h-[92px] items-center justify-center rounded-[24px] border border-[#f0f2f7] bg-background px-5"
+                >
+                  <Text className="text-center font-poppins-semibold text-[18px] leading-[25px] text-text-primary">
+                    No languages match your search
+                  </Text>
+                  <Text className="mt-1 text-center font-poppins text-[14px] leading-[21px] text-[#68728d]">
+                    Try a different term
+                  </Text>
+                </View>
+              ) : (
+                filteredLanguages.map((language) => {
+                  const isSelected = language.id === selectedLanguageId;
 
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
-                    key={language.id}
-                    onPress={() => setSelectedLanguageId(language.id)}
-                    className={[
-                      "h-[92px] flex-row items-center rounded-[24px] bg-background px-5",
-                      isSelected
-                        ? "border-2 border-[#8b62ff] bg-[#fbfaff]"
-                        : "border border-[#f0f2f7]",
-                    ].join(" ")}
-                  >
-                    <View className="h-[54px] w-[54px] items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,19,40,0.08)]">
-                      <Text className="text-[30px] leading-[38px]">
-                        {language.flagEmoji}
-                      </Text>
-                    </View>
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      key={language.id}
+                      onPress={() => setSelectedLanguageId(language.id)}
+                      className={[
+                        "h-[92px] flex-row items-center rounded-[24px] bg-background px-5",
+                        isSelected
+                          ? "border-2 border-[#8b62ff] bg-[#fbfaff]"
+                          : "border border-[#f0f2f7]",
+                      ].join(" ")}
+                    >
+                      <View className="h-[54px] w-[54px] items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,19,40,0.08)]">
+                        <Text className="text-[30px] leading-[38px]">
+                          {language.flagEmoji}
+                        </Text>
+                      </View>
 
-                    <View className="ml-5 flex-1">
-                      <Text className="font-poppins-semibold text-[20px] leading-[27px] text-text-primary">
-                        {language.name}
-                      </Text>
-                      <Text className="mt-1 font-poppins text-[15px] leading-[22px] text-[#68728d]">
-                        {learnerCounts[language.id]}
-                      </Text>
-                    </View>
+                      <View className="ml-5 flex-1">
+                        <Text className="font-poppins-semibold text-[20px] leading-[27px] text-text-primary">
+                          {language.name}
+                        </Text>
+                        <Text className="mt-1 font-poppins text-[15px] leading-[22px] text-[#68728d]">
+                          {learnerCounts[language.id]}
+                        </Text>
+                      </View>
 
-                    <View className="h-11 w-11 items-center justify-center">
-                      {isSelected ? (
-                        <View className="h-9 w-9 items-center justify-center rounded-full bg-lingua-purple shadow-[0_4px_10px_rgba(108,78,245,0.25)]">
-                          <FontAwesome name="check" size={17} color="#ffffff" />
-                        </View>
-                      ) : (
-                        <FontAwesome
-                          name="angle-right"
-                          size={30}
-                          color="#68728d"
-                        />
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              })}
+                      <View className="h-11 w-11 items-center justify-center">
+                        {isSelected ? (
+                          <View className="h-9 w-9 items-center justify-center rounded-full bg-lingua-purple shadow-[0_4px_10px_rgba(108,78,245,0.25)]">
+                            <FontAwesome
+                              name="check"
+                              size={17}
+                              color="#ffffff"
+                            />
+                          </View>
+                        ) : (
+                          <FontAwesome
+                            name="angle-right"
+                            size={30}
+                            color="#68728d"
+                          />
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
             </View>
           </View>
 
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.replace("/")}
+            onPress={() => {
+              setSelectedLanguage(selectedLanguageId);
+              router.replace("/");
+            }}
             className="mt-5 h-[66px] flex-row items-center justify-center rounded-[22px] bg-success shadow-[0_4px_0_#16A34A]"
           >
             <Text className="font-poppins-semibold text-[18px] leading-[26px] text-white">

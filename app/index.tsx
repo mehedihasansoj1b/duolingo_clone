@@ -1,9 +1,14 @@
+import { languages } from "@/data/languages";
+import { useLanguageStore } from "@/store/language-store";
 import { useAuth } from "@clerk/expo";
+import { router, Redirect, Stack } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import { Link, Redirect } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Index() {
   const { isLoaded, isSignedIn, signOut } = useAuth();
+  const { clearSelectedLanguage, hasHydrated, selectedLanguageId } =
+    useLanguageStore();
 
   if (!isLoaded) {
     return null;
@@ -13,24 +18,13 @@ export default function Index() {
     return <Redirect href="/onboarding" />;
   }
 
-  return (
-    <View className="flex-1 justify-center items-center gap-6">
-      <Text className="h1 color-lingua-purple text-center">Lingua</Text>
-      <Link href="/onboarding" className="text-lingua-green h4">
-        Open Onboarding Screen
-      </Link>
-      <Link href="/language-selection" className="text-lingua-purple h4">
-        Open Language Selection Screen
-      </Link>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => signOut()}
-        className="rounded-2xl bg-lingua-purple px-6 py-4"
-      >
-        <Text className="font-poppins-semibold text-[16px] leading-[22px] text-white">
-          Log Out
-        </Text>
-      </Pressable>
-    </View>
-  );
+  if (!hasHydrated) {
+    return null;
+  }
+
+  if (!selectedLanguageId) {
+    return <Redirect href="/language-selection" />;
+  }
+
+  return <Redirect href="/(tabs)" />;
 }
