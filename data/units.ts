@@ -8,7 +8,7 @@ export const units = [
     description: "Say hello, introduce yourself, and order something simple.",
     level: "beginner",
     order: 1,
-    lessonIds: ["spanish-greetings", "spanish-cafe"],
+    lessonIds: ["spanish-greetings", "spanish-cafe", "spanish-lesson-3", "spanish-lesson-4", "spanish-lesson-5", "spanish-lesson-6", "spanish-lesson-7"],
   },
   {
     id: "french-basics-1",
@@ -17,7 +17,7 @@ export const units = [
     description: "Practice polite greetings and easy cafe phrases.",
     level: "beginner",
     order: 1,
-    lessonIds: ["french-greetings", "french-cafe"],
+    lessonIds: ["french-greetings", "french-cafe", "french-lesson-3", "french-lesson-4", "french-lesson-5", "french-lesson-6", "french-lesson-7"],
   },
   {
     id: "japanese-basics-1",
@@ -26,6 +26,6 @@ export const units = [
     description: "Build confidence with greetings and simple travel phrases.",
     level: "beginner",
     order: 1,
-    lessonIds: ["japanese-greetings", "japanese-travel"],
+    lessonIds: ["japanese-greetings", "japanese-travel", "japanese-lesson-3", "japanese-lesson-4", "japanese-lesson-5", "japanese-lesson-6", "japanese-lesson-7"],
   },
 ] satisfies LearningUnit[];
