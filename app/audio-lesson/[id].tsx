@@ -53,12 +53,24 @@ export default function AudioLessonScreen() {
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isTeacherSpeaking, setIsTeacherSpeaking] = useState(false);
   const [userSpokenText, setUserSpokenText] = useState("");
+  const [micSimulationEnabled, setMicSimulationEnabled] = useState(false);
+  const teacherTimersRef = useRef<any[]>([]);
+
+  const clearTeacherTimers = () => {
+    teacherTimersRef.current.forEach((timer) => clearTimeout(timer));
+    teacherTimersRef.current = [];
+  };
+
+  const addTeacherTimer = (timer: any) => {
+    teacherTimersRef.current.push(timer);
+  };
 
   // Animation values
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveAnim1 = useRef(new Animated.Value(0.2)).current;
   const waveAnim2 = useRef(new Animated.Value(0.4)).current;
   const waveAnim3 = useRef(new Animated.Value(0.3)).current;
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // Compile lesson conversational steps based on target language
   const steps: SpeechStep[] = React.useMemo(() => {
@@ -283,19 +295,30 @@ export default function AudioLessonScreen() {
 
   // Connect simulation on mount
   useEffect(() => {
+    clearTeacherTimers();
     const timer = setTimeout(() => {
       setStatus("connected");
       setIsTeacherSpeaking(true);
+      setMicSimulationEnabled(false);
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
-    }, 1500);
 
-    return () => clearTimeout(timer);
+      const stopTimer = setTimeout(() => {
+        setIsTeacherSpeaking(false);
+        setMicSimulationEnabled(true);
+      }, 3000);
+      addTeacherTimer(stopTimer);
+    }, 1500);
+    addTeacherTimer(timer);
+
+    return () => {
+      clearTeacherTimers();
+    };
   }, []);
 
   // Pulse animation for teacher speaker icon or waveforms
   useEffect(() => {
     if (isTeacherSpeaking) {
-      Animated.loop(
+      pulseLoopRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.2,
@@ -308,10 +331,22 @@ export default function AudioLessonScreen() {
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      pulseLoopRef.current.start();
     } else {
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+        pulseLoopRef.current = null;
+      }
       pulseAnim.setValue(1);
     }
+
+    return () => {
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+        pulseLoopRef.current = null;
+      }
+    };
   }, [isTeacherSpeaking, pulseAnim]);
 
   // User Speaking Soundwaves Simulation
@@ -374,19 +409,22 @@ export default function AudioLessonScreen() {
 
   // Simulate speaking and advancing to the next step
   const simulateUserSpeech = () => {
-    if (isMuted || isUserSpeaking || isTeacherSpeaking) return;
+    if (isMuted || isUserSpeaking || !micSimulationEnabled) return;
 
     triggerImpact(Haptics.ImpactFeedbackStyle.Heavy);
     setIsUserSpeaking(true);
     setUserSpokenText("");
+    setMicSimulationEnabled(false);
 
+    clearTeacherTimers();
     // Simulate recognition of spoken words after 1s
-    setTimeout(() => {
+    const recognitionTimer = setTimeout(() => {
       setUserSpokenText(currentStep.expectedUserSpeech);
     }, 1000);
+    addTeacherTimer(recognitionTimer);
 
     // After 2.5 seconds, user is done speaking, teacher analyzes and moves forward
-    setTimeout(() => {
+    const responseTimer = setTimeout(() => {
       setIsUserSpeaking(false);
       setIsTeacherSpeaking(true);
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
@@ -398,16 +436,28 @@ export default function AudioLessonScreen() {
         // Completed lesson!
         setShowSummary(true);
       }
+
+      // Schedule teacher to stop speaking after 3 seconds, enabling the mic simulation again
+      const stopTimer = setTimeout(() => {
+        setIsTeacherSpeaking(false);
+        setMicSimulationEnabled(true);
+      }, 3000);
+      addTeacherTimer(stopTimer);
     }, 2500);
+    addTeacherTimer(responseTimer);
   };
 
   const handleSpeakerPress = () => {
     triggerImpact(Haptics.ImpactFeedbackStyle.Light);
     setIsTeacherSpeaking(true);
+    setMicSimulationEnabled(false);
+    clearTeacherTimers();
     // Simulate teacher speaking for 2 seconds then stopping
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setIsTeacherSpeaking(false);
+      setMicSimulationEnabled(true);
     }, 2000);
+    addTeacherTimer(timer);
   };
 
   const handleEndCall = () => {

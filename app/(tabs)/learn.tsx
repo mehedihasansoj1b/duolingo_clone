@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { images } from "@/constants/images";
 import { languages } from "@/data/languages";
 import { lessons } from "@/data/lessons";
 import { units } from "@/data/units";
 import { useLanguageStore } from "@/store/language-store";
+import { useLessonStore } from "@/store/lesson-store";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -14,6 +16,8 @@ const StyledImage = styled(Image);
 
 export default function LearnScreen() {
   const { selectedLanguageId } = useLanguageStore();
+  const { activeLessonIndex } = useLessonStore();
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   const selectedLanguage =
     languages.find((l) => l.id === selectedLanguageId) || languages[0];
@@ -24,9 +28,6 @@ export default function LearnScreen() {
   const currentLanguageLessons = lessons.filter(
     (l) => l.unitId === currentUnit.id
   );
-
-  // Mock active lesson index
-  const activeLessonIndex = 2; // 3rd lesson is active
 
   return (
     <SafeAreaView className="flex-1 bg-[#f9fafb]" edges={["top"]}>
@@ -49,9 +50,12 @@ export default function LearnScreen() {
         </View>
         <Pressable 
           accessibilityRole="button"
-          className="h-10 w-10 items-center justify-center -mr-2"
+          accessibilityLabel={isBookmarked ? "Remove bookmark" : "Add bookmark"}
+          accessibilityState={{ selected: isBookmarked }}
+          onPress={() => setIsBookmarked(!isBookmarked)}
+          className="h-10 w-10 items-center justify-center -mr-2 active:opacity-70"
         >
-          <Ionicons name="bookmark" size={24} color="#FBBF24" />
+          <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={24} color="#FBBF24" />
         </Pressable>
       </View>
 
