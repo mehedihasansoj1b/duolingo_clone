@@ -63,7 +63,7 @@ export default function HomeScreen() {
       {/* Scrollable Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerClassName="px-6 pt-2 pb-10"
+        contentContainerClassName="px-6 pt-2 pb-36"
       >
         {/* Header Bar */}
         <View className="flex-row items-center justify-between mb-6">
@@ -179,7 +179,7 @@ export default function HomeScreen() {
         <View className="mb-6">
           <View className="flex-row justify-between items-center mb-3">
             <Text className="font-poppins-bold text-[20px] text-text-primary">
-              Today's plan
+              {"Today's plan"}
             </Text>
             <Pressable
               accessibilityRole="button"
