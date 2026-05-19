@@ -8,7 +8,7 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { styled } from "nativewind";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, NativeSyntheticEvent, Pressable, ScrollView, Text, TextLayoutEventData, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const StyledImage = styled(Image);
@@ -27,7 +27,7 @@ export default function HomeScreen() {
     setShowEmoji(true);
   }, [selectedLanguageId, firstName]);
 
-  const handleTextLayout = (e: any) => {
+  const handleTextLayout = (e: NativeSyntheticEvent<TextLayoutEventData>) => {
     // If text wraps to 2+ lines, hide the emoji to make it fit on 1 line
     if (e.nativeEvent.lines.length > 1 && showEmoji) {
       setShowEmoji(false);

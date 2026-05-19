@@ -89,7 +89,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             key={route.key}
             accessibilityRole="button"
             accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={options.tabBarAccessibilityLabel}
+            accessibilityLabel={options.tabBarAccessibilityLabel || (typeof label === "string" ? label : undefined)}
             testID={(options as any).tabBarTestID}
             onPress={onPress}
             onLongPress={onLongPress}
