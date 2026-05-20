@@ -2,7 +2,7 @@ import { images } from "@/constants/images";
 import { languages } from "@/data/languages";
 import { lessons } from "@/data/lessons";
 import { useLanguageStore } from "@/store/language-store";
-import { useAuth, useUser } from "@clerk/expo";
+import { useUser } from "@clerk/expo";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -14,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const StyledImage = styled(Image);
 
 export default function HomeScreen() {
-  const { signOut } = useAuth();
   const { user } = useUser();
   const { clearSelectedLanguage, selectedLanguageId } = useLanguageStore();
   const [showEmoji, setShowEmoji] = useState(true);
@@ -264,42 +263,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-
-        {/* Developer / Testing Section (Subtly styled at the very bottom) */}
-        <View className="border-t border-gray-100 pt-8 mt-4 items-center">
-          <Text className="font-poppins-semibold text-[12px] text-[#6b7280] uppercase tracking-wider mb-4">
-            Developer Controls
-          </Text>
-          <View className="flex-row gap-4 w-full justify-center">
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push("/language-selection")}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-[#FAFBFD] items-center justify-center flex-1 active:opacity-90"
-            >
-              <Text className="font-poppins-semibold text-[13px] text-text-primary">
-                Change Language
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={clearSelectedLanguage}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-[#FAFBFD] items-center justify-center flex-1 active:opacity-90"
-            >
-              <Text className="font-poppins-semibold text-[13px] text-error">
-                Clear Language
-              </Text>
-            </Pressable>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => signOut()}
-            className="mt-4 px-6 py-2.5 rounded-xl border border-gray-200 bg-[#FAFBFD] items-center justify-center w-full active:opacity-90"
-          >
-            <Text className="font-poppins-semibold text-[13px] text-text-secondary">
-              Sign Out
-            </Text>
-          </Pressable>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

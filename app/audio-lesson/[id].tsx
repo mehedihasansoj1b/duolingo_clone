@@ -9,12 +9,24 @@ import {
   useWindowDimensions,
   ImageBackground,
   Animated,
+  Platform,
+  NativeModules,
 } from "react-native";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams, Stack } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import Constants from "expo-constants";
+import { useUser } from "@clerk/expo";
+
+import {
+  StreamVideoClient,
+  StreamVideo,
+  StreamCall,
+  useCallStateHooks,
+  CallingState,
+} from "@/components/StreamCallWrapper";
 
 import { lessons } from "@/data/lessons";
 import { languages } from "@/data/languages";
@@ -31,21 +43,220 @@ interface SpeechStep {
   grammarScore: "Excellent" | "Great" | "Good" | "Muted" | "Pending";
 }
 
+const getApiUrl = (path: string) => {
+  if (Platform.OS === "web") return path;
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(":")[0];
+    return `http://${ip}:8081${path}`;
+  }
+  return `http://localhost:8081${path}`;
+};
+
 export default function AudioLessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isLoaded, isSignedIn, user: clerkUser } = useUser();
+  const lesson = lessons.find((l) => l.id === id) as LearningLesson | undefined;
+
+  const [client, setClient] = useState<any | null>(null);
+  const [call, setCall] = useState<any | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !lesson) return;
+
+    let mounted = true;
+
+    const initCall = async () => {
+      try {
+        setLoading(true);
+        setStreamError(null);
+
+        const response = await fetch(getApiUrl("/api/stream"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            lessonId: lesson.id,
+            languageId: lesson.languageId,
+            userId: clerkUser.id,
+            userName: clerkUser.fullName || clerkUser.username || clerkUser.id,
+            userImage: clerkUser.imageUrl || "",
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        if (!mounted) return;
+
+        const videoClient = StreamVideoClient.getOrCreateInstance({
+          apiKey: data.apiKey,
+          user: {
+            id: data.userId,
+            name: clerkUser.fullName || clerkUser.username || data.userId,
+            image: clerkUser.imageUrl || "",
+          },
+          token: data.token,
+        });
+
+        const callInstance = videoClient.call("default", data.callId);
+        
+        const hasWebRTC = NativeModules && (NativeModules.WebRTCModule || NativeModules.WebRTCBridge);
+        if (hasWebRTC && Platform.OS !== "web") {
+          try {
+            const { callManager } = require("@stream-io/video-react-native-sdk");
+            await callManager.start({
+              audioRole: "communicator",
+              deviceEndpointType: "speaker",
+            });
+            callManager.speaker.setForceSpeakerphoneOn(true);
+            console.log("[AudioLessonScreen] Configured callManager with forced speakerphone.");
+          } catch (err) {
+            console.warn("[AudioLessonScreen] Failed to configure callManager:", err);
+          }
+        }
+
+        await callInstance.join({ create: true });
+
+        if (hasWebRTC) {
+          try {
+            // Automatically unmute mic and disable camera for native WebRTC calls
+            await callInstance.microphone.enable();
+            await callInstance.camera.disable();
+            console.log("[AudioLessonScreen] Enabled microphone and disabled camera on callInstance.");
+          } catch (err) {
+            console.warn("[AudioLessonScreen] Failed to set initial mic/camera states:", err);
+          }
+        }
+
+        if (!mounted) return;
+
+        setClient(videoClient);
+        setCall(callInstance);
+        setLoading(false);
+      } catch (err: any) {
+        console.error("Error setting up Stream call:", err);
+        if (mounted) {
+          setStreamError(err.message || "Failed to initialize call session");
+          setLoading(false);
+        }
+      }
+    };
+
+    // Strict-mode compliance: setTimeout with 50ms guard
+    const initTimer = setTimeout(() => {
+      initCall();
+    }, 50);
+
+    return () => {
+      mounted = false;
+      clearTimeout(initTimer);
+    };
+  }, [isLoaded, isSignedIn, id, clerkUser, lesson]);
+
+  useEffect(() => {
+    return () => {
+      if (client) {
+        client.disconnectUser().catch((err: any) => {
+          console.error("Error disconnecting Stream client:", err);
+        });
+      }
+    };
+  }, [client]);
+
+  if (!lesson) {
+    return (
+      <SafeAreaView style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "white", paddingHorizontal: 24 }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Text className="h3 text-text-primary text-center">Lesson not found</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0A1C3F", alignItems: "center", justifyContent: "center", gap: 16 }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ActivityIndicator size="large" color="#6c4ef5" />
+        <Text className="font-poppins-medium text-[16px] text-white">
+          Initializing Audio Lesson Call...
+        </Text>
+      </View>
+    );
+  }
+
+  if (streamError) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0A1C3F", alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Ionicons name="alert-circle-outline" size={64} color="#FF4D4F" />
+        <Text className="font-poppins-bold text-[20px] text-white text-center">
+          Failed to initialize call session
+        </Text>
+        <Text className="font-poppins-regular text-[14px] text-white/70 text-center mb-4">
+          {streamError}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.back()}
+          className="bg-lingua-purple px-8 py-3 rounded-full active:opacity-90"
+        >
+          <Text className="font-poppins-semibold text-white text-[15px]">Go Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <StreamVideo client={client}>
+      <StreamCall call={call}>
+        <AudioLessonContent lesson={lesson} client={client} call={call} />
+      </StreamCall>
+    </StreamVideo>
+  );
+}
+
+function AudioLessonContent({ lesson, client, call }: { lesson: LearningLesson; client: any; call: any }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-
-  // Find selected lesson
-  const lesson = lessons.find((l) => l.id === id) as LearningLesson | undefined;
+  const { user: clerkUser } = useUser();
   
   // Find language
   const language = languages.find((lang) => lang.id === lesson?.languageId);
 
-  // Screen States
-  const [status, setStatus] = useState<"connecting" | "connected" | "ended">("connecting");
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOn, setIsCameraOn] = useState(true);
+  // Use Stream Calling and Mic state hooks
+  const { useMicrophoneState, useCallCallingState } = useCallStateHooks();
+  const { isMute, microphone } = useMicrophoneState();
+  const callingState = useCallCallingState();
+
+  const status = React.useMemo(() => {
+    if (!callingState || callingState === CallingState.IDLE || callingState === CallingState.UNKNOWN) {
+      return "connecting";
+    }
+    switch (callingState) {
+      case CallingState.JOINING:
+      case CallingState.RECONNECTING:
+        return "connecting";
+      case CallingState.JOINED:
+        return "connected";
+      case CallingState.LEFT:
+        return "ended";
+      default:
+        return "connecting";
+    }
+  }, [callingState]);
+
+  const isMuted = isMute;
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [showInfoSheet, setShowInfoSheet] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -55,6 +266,108 @@ export default function AudioLessonScreen() {
   const [userSpokenText, setUserSpokenText] = useState("");
   const [micSimulationEnabled, setMicSimulationEnabled] = useState(false);
   const teacherTimersRef = useRef<any[]>([]);
+
+  // Agent Connection & Session State
+  const [agentStatus, setAgentStatus] = useState<"idle" | "connecting" | "connected" | "failed">("idle");
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
+  const agentSessionIdRef = useRef<string | null>(null);
+  const agentStartedRef = useRef(false);
+
+  useEffect(() => {
+    agentSessionIdRef.current = agentSessionId;
+  }, [agentSessionId]);
+
+  const stopAgentSession = async (sessId: string) => {
+    try {
+      console.log(`Stopping agent session ${sessId}...`);
+      await fetch(getApiUrl("/api/agent/stop"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          callId: call.id,
+          sessionId: sessId,
+        }),
+      });
+    } catch (err) {
+      console.error("Error stopping agent session:", err);
+    }
+  };
+
+  // Trigger agent session start when user successfully connects to Stream call
+  useEffect(() => {
+    if (status !== "connected") return;
+    if (agentStartedRef.current) return;
+
+    agentStartedRef.current = true;
+    let active = true;
+
+    const startAgentSession = async () => {
+      try {
+        setAgentStatus("connecting");
+        console.log(`Starting agent session for call: ${call.id}`);
+        const response = await fetch(getApiUrl("/api/agent/start"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            callId: call.id,
+            callType: "default",
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        if (active) {
+          setAgentSessionId(data.session_id);
+          setAgentStatus("connected");
+          console.log(`Agent started successfully with session ID: ${data.session_id}`);
+        }
+      } catch (err) {
+        console.error("Failed to start agent:", err);
+        if (active) {
+          setAgentStatus("failed");
+          agentStartedRef.current = false;
+        }
+      }
+    };
+
+    startAgentSession();
+
+    return () => {
+      active = false;
+    };
+  }, [status, call.id]);
+
+  // Handle unmount clean up to prevent session leaks
+  useEffect(() => {
+    return () => {
+      if (agentSessionIdRef.current) {
+        console.log(`Unmounting: stopping active agent session ${agentSessionIdRef.current}`);
+        fetch(getApiUrl("/api/agent/stop"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            callId: call.id,
+            sessionId: agentSessionIdRef.current,
+          }),
+        }).catch((err) => {
+          console.error("Error during unmount stop session:", err);
+        });
+      }
+    };
+  }, [call.id]);
 
   const clearTeacherTimers = () => {
     teacherTimersRef.current.forEach((timer) => clearTimeout(timer));
@@ -293,27 +606,25 @@ export default function AudioLessonScreen() {
     return compiledSteps;
   }, [lesson, language]);
 
-  // Connect simulation on mount
+  // Trigger initial teacher welcoming speech when call successfully connects
   useEffect(() => {
-    clearTeacherTimers();
-    const timer = setTimeout(() => {
-      setStatus("connected");
-      setIsTeacherSpeaking(true);
-      setMicSimulationEnabled(false);
-      triggerHaptic(Haptics.NotificationFeedbackType.Success);
+    if (status !== "connected") return;
 
-      const stopTimer = setTimeout(() => {
-        setIsTeacherSpeaking(false);
-        setMicSimulationEnabled(true);
-      }, 3000);
-      addTeacherTimer(stopTimer);
-    }, 1500);
-    addTeacherTimer(timer);
+    clearTeacherTimers();
+    setIsTeacherSpeaking(true);
+    setMicSimulationEnabled(false);
+    triggerHaptic(Haptics.NotificationFeedbackType.Success);
+
+    const stopTimer = setTimeout(() => {
+      setIsTeacherSpeaking(false);
+      setMicSimulationEnabled(true);
+    }, 3000);
+    addTeacherTimer(stopTimer);
 
     return () => {
       clearTeacherTimers();
     };
-  }, []);
+  }, [status]);
 
   // Pulse animation for teacher speaker icon or waveforms
   useEffect(() => {
@@ -392,14 +703,34 @@ export default function AudioLessonScreen() {
     }
   };
 
+  const hasWebRTC = NativeModules && (NativeModules.WebRTCModule || NativeModules.WebRTCBridge);
+
   const handleMicPress = () => {
     triggerImpact(Haptics.ImpactFeedbackStyle.Medium);
-    setIsMuted(!isMuted);
+    microphone.toggle().catch((err: any) => {
+      console.error("Failed to toggle microphone:", err);
+    });
+  };
+
+  const handleMicButtonPress = () => {
+    if (!hasWebRTC) {
+      simulateUserSpeech();
+    } else {
+      handleMicPress();
+    }
   };
 
   const handleCameraPress = () => {
     triggerImpact(Haptics.ImpactFeedbackStyle.Light);
-    setIsCameraOn(!isCameraOn);
+    const nextState = !isCameraOn;
+    setIsCameraOn(nextState);
+    if (call && call.camera) {
+      if (nextState) {
+        call.camera.enable().catch((err: any) => console.error("Failed to enable camera:", err));
+      } else {
+        call.camera.disable().catch((err: any) => console.error("Failed to disable camera:", err));
+      }
+    }
   };
 
   const handleSubtitlesPress = () => {
@@ -462,24 +793,19 @@ export default function AudioLessonScreen() {
 
   const handleEndCall = () => {
     triggerHaptic(Haptics.NotificationFeedbackType.Warning);
+    if (agentSessionId) {
+      stopAgentSession(agentSessionId);
+      setAgentSessionId(null);
+      setAgentStatus("idle");
+    }
+    agentStartedRef.current = false;
+    if (call) {
+      call.leave().catch((err: any) => {
+        console.error("Failed to leave call:", err);
+      });
+    }
     setShowSummary(true);
   };
-
-  if (!lesson) {
-    return (
-      <SafeAreaView style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "white", paddingHorizontal: 24 }}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <Text className="h3 text-text-primary text-center">Lesson not found</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.back()}
-          className="mt-6 bg-lingua-purple rounded-2xl py-3 px-6"
-        >
-          <Text className="h4 text-white">Go Back</Text>
-        </Pressable>
-      </SafeAreaView>
-    );
-  }
 
   const currentStep = steps[stepIndex] || {
     teacherText: "",
@@ -528,10 +854,38 @@ export default function AudioLessonScreen() {
             AI Teacher
           </Text>
           <View className="flex-row items-center mt-0.5">
-            <View className="w-2 h-2 rounded-full mr-1.5 bg-success" />
-            <Text className="font-poppins-semibold text-[12px] text-success">
-              Online
-            </Text>
+            {agentStatus === "idle" && (
+              <>
+                <View className="w-2 h-2 rounded-full mr-1.5 bg-gray-400" />
+                <Text className="font-poppins-semibold text-[12px] text-text-secondary">
+                  Idle
+                </Text>
+              </>
+            )}
+            {agentStatus === "connecting" && (
+              <>
+                <View className="w-2 h-2 rounded-full mr-1.5 bg-lingua-purple" />
+                <Text className="font-poppins-semibold text-[12px] text-lingua-purple">
+                  Connecting...
+                </Text>
+              </>
+            )}
+            {agentStatus === "connected" && (
+              <>
+                <View className={`w-2 h-2 rounded-full mr-1.5 ${hasWebRTC ? "bg-success" : "bg-[#FF9900]"}`} />
+                <Text className={`font-poppins-semibold text-[12px] ${hasWebRTC ? "text-success" : "text-[#FF9900]"}`}>
+                  {hasWebRTC ? "Sarah Online" : "Sarah (Simulated)"}
+                </Text>
+              </>
+            )}
+            {agentStatus === "failed" && (
+              <>
+                <View className="w-2 h-2 rounded-full mr-1.5 bg-error" />
+                <Text className="font-poppins-semibold text-[12px] text-error">
+                  Offline
+                </Text>
+              </>
+            )}
             {language && (
               <Text className="font-poppins-medium text-[12px] text-text-secondary">
                 {" • "}{language.name}
@@ -597,11 +951,11 @@ export default function AudioLessonScreen() {
           />
           <View className="absolute inset-0 bg-black/20" />
 
-          {status === "connecting" ? (
+          {status === "connecting" || agentStatus === "connecting" || (status === "connected" && agentStatus === "idle") ? (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16 }}>
               <ActivityIndicator size="large" color="#6c4ef5" />
               <Text className="font-poppins-medium text-[16px] text-white">
-                Connecting to AI Teacher...
+                {status === "connecting" ? "Connecting to Call Room..." : "Connecting to AI Teacher..."}
               </Text>
             </View>
           ) : (
@@ -614,6 +968,23 @@ export default function AudioLessonScreen() {
                     {language?.flagEmoji} {lesson.title}
                   </Text>
                 </View>
+
+                {clerkUser && (
+                  <View className="flex-row items-center bg-black/35 px-2.5 py-1 rounded-full border border-white/10 gap-1.5">
+                    <Image
+                      source={{ uri: clerkUser.imageUrl }}
+                      style={{ width: 18, height: 18, borderRadius: 9 }}
+                    />
+                    <View>
+                      <Text className="font-poppins-semibold text-[9px] text-white leading-none">
+                        {clerkUser.fullName || clerkUser.username || "You"}
+                      </Text>
+                      <Text className="font-poppins-regular text-[7px] text-white/70 uppercase tracking-wider leading-none mt-0.5">
+                        {isMuted ? "Muted" : status === "connected" ? "Joined" : status}
+                      </Text>
+                    </View>
+                  </View>
+                )}
                 
                 <View className="bg-black/35 px-3 py-1.5 rounded-full border border-white/10">
                   <Text className="font-poppins-medium text-[12px] text-white">
@@ -621,7 +992,6 @@ export default function AudioLessonScreen() {
                   </Text>
                 </View>
               </View>
-
 
               {/* Mascot waving happily - absolutely positioned to prevent layout push */}
               <View style={{
@@ -765,8 +1135,7 @@ export default function AudioLessonScreen() {
                   <View className="items-center gap-1.5">
                     <Pressable
                       accessibilityRole="button"
-                      onPress={simulateUserSpeech}
-                      onLongPress={handleMicPress}
+                      onPress={handleMicButtonPress}
                       className={`w-14 h-14 rounded-full items-center justify-center active:opacity-80 ${
                         isMuted
                           ? "bg-[#FF4D4F]"
@@ -782,7 +1151,7 @@ export default function AudioLessonScreen() {
                       />
                     </Pressable>
                     <Text className="font-poppins-medium text-[11px] text-white/95">
-                      {isMuted ? "Muted" : isUserSpeaking ? "Speaking" : "Mic"}
+                      {isMuted ? "Muted" : hasWebRTC ? "Live" : isUserSpeaking ? "Speaking" : "Mic"}
                     </Text>
                   </View>
 
